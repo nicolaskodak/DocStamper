@@ -144,7 +144,7 @@
     <div class="container mx-auto max-w-6xl bg-white p-6 rounded-lg shadow-md">
         <h1 class="text-2xl font-bold mb-6 text-center text-gray-700">PDF 電子簽章工具</h1>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 items-end">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 items-end">
             <div>
                 <label for="pdf-upload" class="block text-sm font-medium text-gray-700 mb-1">1. 上傳 PDF 文件:</label>
                 <input type="file" id="pdf-upload" accept=".pdf" class="w-full text-sm">
@@ -156,6 +156,10 @@
             <div>
                 <label for="stamp2-upload" class="block text-sm font-medium text-gray-700 mb-1">3. 上傳公司小章 (圖片):</label>
                 <input type="file" id="stamp2-upload" accept="image/png, image/jpeg" class="w-full text-sm">
+            </div>
+            <div>
+                <label for="stamp3-upload" class="block text-sm font-medium text-gray-700 mb-1">4. 上傳發票章 (optional, 圖片):</label>
+                <input type="file" id="stamp3-upload" accept="image/png, image/jpeg" class="w-full text-sm">
             </div>
         </div>
 
@@ -171,6 +175,7 @@
              <div class="flex justify-center items-center space-x-4 mb-4">
                  <button id="add-stamp1" disabled class="text-sm">添加大章</button>
                  <button id="add-stamp2" disabled class="text-sm">添加小章</button>
+                 <button id="add-stamp3" disabled class="text-sm">添加發票章</button>
                  <button id="download-pdf" disabled class="bg-green-500 hover:bg-green-600 text-sm">下載簽署後 PDF</button>
              </div>
              <div id="loading-indicator" class="loader hidden"></div>
@@ -197,6 +202,7 @@
         const pdfUpload = document.getElementById('pdf-upload');
         const stamp1Upload = document.getElementById('stamp1-upload');
         const stamp2Upload = document.getElementById('stamp2-upload');
+        const stamp3Upload = document.getElementById('stamp3-upload');
         const pdfControls = document.getElementById('pdf-controls');
         const pdfViewerContainer = document.getElementById('pdf-viewer-container');
         const initialMessage = document.getElementById('initial-message');
@@ -208,6 +214,7 @@
         const nextPageBtn = document.getElementById('next-page');
         const addStamp1Btn = document.getElementById('add-stamp1');
         const addStamp2Btn = document.getElementById('add-stamp2');
+        const addStamp3Btn = document.getElementById('add-stamp3');
         const downloadPdfBtn = document.getElementById('download-pdf');
         const loadingIndicator = document.getElementById('loading-indicator');
 
@@ -220,6 +227,7 @@
         let currentCanvasContext = null;
         let stamp1DataUrl = null;
         let stamp2DataUrl = null;
+        let stamp3DataUrl = null;
         let placedStamps = []; // Array to store info about placed stamps { id, type, page, x, y, width, height, rotation, isResizing }
         let stampCounter = 0; // To give unique IDs to stamps
         let originalPdfBytes = null; // Store original PDF data for modification
@@ -229,10 +237,12 @@
         pdfUpload.addEventListener('change', handlePdfUpload);
         stamp1Upload.addEventListener('change', (e) => handleStampUpload(e, 1));
         stamp2Upload.addEventListener('change', (e) => handleStampUpload(e, 2));
+        stamp3Upload.addEventListener('change', (e) => handleStampUpload(e, 3));
         prevPageBtn.addEventListener('click', onPrevPage);
         nextPageBtn.addEventListener('click', onNextPage);
         addStamp1Btn.addEventListener('click', () => addStamp(1));
         addStamp2Btn.addEventListener('click', () => addStamp(2));
+        addStamp3Btn.addEventListener('click', () => addStamp(3));
         downloadPdfBtn.addEventListener('click', generateSignedPdf);
 
         function handlePdfUpload(event) {
@@ -258,6 +268,7 @@
                         // Enable stamp buttons if images are already loaded
                         addStamp1Btn.disabled = !stamp1DataUrl;
                         addStamp2Btn.disabled = !stamp2DataUrl;
+                        addStamp3Btn.disabled = !stamp3DataUrl;
                     }, function (reason) {
                         console.error('Error loading PDF:', reason);
                         alert('無法載入 PDF 文件。請檢查檔案是否正確。');
@@ -359,10 +370,13 @@
             pdfUpload.value = ''; // Clear file input
             stamp1Upload.value = '';
             stamp2Upload.value = '';
+            stamp3Upload.value = '';
             stamp1DataUrl = null;
             stamp2DataUrl = null;
+            stamp3DataUrl = null;
             addStamp1Btn.disabled = true;
             addStamp2Btn.disabled = true;
+            addStamp3Btn.disabled = true;
             downloadPdfBtn.disabled = true;
             clearAllStamps();
             placedStamps = [];
@@ -381,35 +395,43 @@
 
         // --- Stamp Handling ---
 
+        function setStampData(stampType, dataUrl) {
+            if (stampType === 1) {
+                stamp1DataUrl = dataUrl;
+                addStamp1Btn.disabled = !(pdfDoc && dataUrl);
+            } else if (stampType === 2) {
+                stamp2DataUrl = dataUrl;
+                addStamp2Btn.disabled = !(pdfDoc && dataUrl);
+            } else if (stampType === 3) {
+                stamp3DataUrl = dataUrl;
+                addStamp3Btn.disabled = !(pdfDoc && dataUrl);
+            }
+        }
+
+        function getStampData(stampType) {
+            if (stampType === 1) return stamp1DataUrl;
+            if (stampType === 2) return stamp2DataUrl;
+            if (stampType === 3) return stamp3DataUrl;
+            return null;
+        }
+
         function handleStampUpload(event, stampType) {
             const file = event.target.files[0];
             if (file && (file.type === 'image/png' || file.type === 'image/jpeg')) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
-                    if (stampType === 1) {
-                        stamp1DataUrl = e.target.result;
-                        addStamp1Btn.disabled = !pdfDoc; // Enable only if PDF is loaded
-                    } else {
-                        stamp2DataUrl = e.target.result;
-                        addStamp2Btn.disabled = !pdfDoc; // Enable only if PDF is loaded
-                    }
+                    setStampData(stampType, e.target.result);
                 }
                 reader.readAsDataURL(file);
             } else {
                 alert('請選擇有效的 PNG 或 JPG 圖片檔案。');
                 event.target.value = ''; // Clear the input
-                 if (stampType === 1) {
-                    stamp1DataUrl = null;
-                    addStamp1Btn.disabled = true;
-                 } else {
-                    stamp2DataUrl = null;
-                    addStamp2Btn.disabled = true;
-                 }
+                setStampData(stampType, null);
             }
         }
 
         function addStamp(stampType) {
-            const dataUrl = (stampType === 1) ? stamp1DataUrl : stamp2DataUrl;
+            const dataUrl = getStampData(stampType);
             // Ensure PDF document and stamp image are loaded
             if (!dataUrl || !pdfDoc) {
                  alert('請先上傳 PDF 文件和對應的印章圖片。');
@@ -429,7 +451,7 @@
 
             const stampData = {
                 id: stampId,
-                type: stampType, // 1 for large, 2 for small
+                type: stampType, // 1 for large, 2 for small, 3 for invoice
                 page: pageNum,
                 x: initialX,
                 y: initialY,
