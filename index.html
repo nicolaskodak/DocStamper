@@ -45,7 +45,7 @@
             display: flex; /* Use flexbox for positioning internal elements */
             justify-content: center; /* Center image horizontally */
             align-items: center; /* Center image vertically */
-            overflow: hidden; /* Hide parts of image if container is smaller */
+            overflow: visible; /* Allow control buttons to sit outside the box */
             background-color: rgba(255, 255, 255, 0.5); /* Slight background for visibility */
         }
         .stamp-container.dragging,
@@ -63,6 +63,53 @@
             display: block;
             object-fit: contain; /* Scale image while preserving aspect ratio */
             pointer-events: none; /* Prevent image from interfering with drag */
+        }
+        .signature-container {
+            background-color: rgba(255, 255, 255, 0.78);
+            border: 2px dashed rgba(17, 24, 39, 0.45);
+        }
+        .signature-pad {
+            width: 100%;
+            height: 100%;
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+            background-color: transparent;
+        }
+        .signature-toolbar {
+            position: absolute;
+            top: -34px;
+            right: 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            pointer-events: auto;
+            z-index: 12;
+        }
+        .signature-action-button {
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            border-radius: 999px;
+            background-color: rgba(17, 24, 39, 0.82);
+            color: white;
+            font-size: 14px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+        }
+        .signature-action-button:hover {
+            background-color: rgba(31, 41, 55, 0.95);
+        }
+        .signature-toolbar .resize-mode-button {
+            position: static;
+            top: auto;
+            right: auto;
+            width: 28px;
+            height: 28px;
+            line-height: 1;
         }
         .resize-handle {
             position: absolute;
@@ -176,6 +223,7 @@
                  <button id="add-stamp1" disabled class="text-sm">添加大章</button>
                  <button id="add-stamp2" disabled class="text-sm">添加小章</button>
                  <button id="add-stamp3" disabled class="text-sm">添加發票章</button>
+                 <button id="add-signature" disabled class="text-sm">添加手簽框</button>
                  <button id="download-pdf" disabled class="bg-green-500 hover:bg-green-600 text-sm">下載簽署後 PDF</button>
              </div>
              <div id="loading-indicator" class="loader hidden"></div>
@@ -215,6 +263,7 @@
         const addStamp1Btn = document.getElementById('add-stamp1');
         const addStamp2Btn = document.getElementById('add-stamp2');
         const addStamp3Btn = document.getElementById('add-stamp3');
+        const addSignatureBtn = document.getElementById('add-signature');
         const downloadPdfBtn = document.getElementById('download-pdf');
         const loadingIndicator = document.getElementById('loading-indicator');
 
@@ -243,6 +292,7 @@
         addStamp1Btn.addEventListener('click', () => addStamp(1));
         addStamp2Btn.addEventListener('click', () => addStamp(2));
         addStamp3Btn.addEventListener('click', () => addStamp(3));
+        addSignatureBtn.addEventListener('click', addSignatureBox);
         downloadPdfBtn.addEventListener('click', generateSignedPdf);
 
         function handlePdfUpload(event) {
@@ -269,6 +319,7 @@
                         addStamp1Btn.disabled = !stamp1DataUrl;
                         addStamp2Btn.disabled = !stamp2DataUrl;
                         addStamp3Btn.disabled = !stamp3DataUrl;
+                        addSignatureBtn.disabled = false;
                     }, function (reason) {
                         console.error('Error loading PDF:', reason);
                         alert('無法載入 PDF 文件。請檢查檔案是否正確。');
@@ -377,6 +428,7 @@
             addStamp1Btn.disabled = true;
             addStamp2Btn.disabled = true;
             addStamp3Btn.disabled = true;
+            addSignatureBtn.disabled = true;
             downloadPdfBtn.disabled = true;
             clearAllStamps();
             placedStamps = [];
@@ -464,26 +516,65 @@
             createStampElement(stampData);
         }
 
+        function addSignatureBox() {
+            if (!pdfDoc) {
+                 alert('請先上傳 PDF 文件。');
+                 return;
+            }
+
+            stampCounter++;
+            const stampId = `stamp-${stampCounter}`;
+            const initialWidth = 220;
+            const initialHeight = 90;
+            const layerWidth = stampLayer.offsetWidth || pdfCanvas.width;
+            const layerHeight = stampLayer.offsetHeight || pdfCanvas.height;
+            const initialX = Math.max(0, (layerWidth / 2) - (initialWidth / 2));
+            const initialY = Math.max(0, (layerHeight / 2) - (initialHeight / 2));
+
+            const stampData = {
+                id: stampId,
+                type: 'signature',
+                page: pageNum,
+                x: initialX,
+                y: initialY,
+                width: initialWidth,
+                height: initialHeight,
+                dataUrl: null,
+                hasInk: false,
+                isResizing: false
+            };
+            placedStamps.push(stampData);
+            createStampElement(stampData);
+        }
+
         function createStampElement(stampData) {
             if (stampData.page !== pageNum) return; // Only create if on the current page
 
             const container = document.createElement('div');
             container.id = stampData.id;
-            container.className = 'stamp-container';
+            container.className = stampData.type === 'signature' ? 'stamp-container signature-container' : 'stamp-container';
             container.style.left = `${stampData.x}px`;
             container.style.top = `${stampData.y}px`;
             container.style.width = `${stampData.width}px`;
             container.style.height = `${stampData.height}px`;
 
-            const img = document.createElement('img');
-            img.src = stampData.dataUrl;
-            img.className = 'stamp-image';
-            img.alt = `印章 ${stampData.type}`;
-            // Handle image loading errors (optional but good practice)
-            img.onerror = () => {
-                console.error(`Error loading image for stamp ${stampData.id}`);
-                container.innerHTML = '<span class="text-red-500 text-xs">圖片錯誤</span>'; // Show error in container
-            };
+            if (stampData.type === 'signature') {
+                const signatureCanvas = document.createElement('canvas');
+                signatureCanvas.className = 'signature-pad';
+                signatureCanvas.dataset.stampId = stampData.id;
+                container.appendChild(signatureCanvas);
+            } else {
+                const img = document.createElement('img');
+                img.src = stampData.dataUrl;
+                img.className = 'stamp-image';
+                img.alt = `印章 ${stampData.type}`;
+                // Handle image loading errors (optional but good practice)
+                img.onerror = () => {
+                    console.error(`Error loading image for stamp ${stampData.id}`);
+                    container.innerHTML = '<span class="text-red-500 text-xs">圖片錯誤</span>'; // Show error in container
+                };
+                container.appendChild(img);
+            }
 
 
             const resizeHandle = document.createElement('div');
@@ -494,10 +585,41 @@
             resizeButton.innerHTML = '⤡'; // Resize symbol
             resizeButton.title = '切換拖曳/調整大小模式';
 
-            container.appendChild(img);
             container.appendChild(resizeHandle);
-            container.appendChild(resizeButton);
+            if (stampData.type === 'signature') {
+                const toolbar = document.createElement('div');
+                toolbar.className = 'signature-toolbar';
+
+                const moveButton = document.createElement('button');
+                moveButton.className = 'signature-action-button signature-drag-handle';
+                moveButton.innerHTML = '↕';
+                moveButton.title = '拖曳移動';
+
+                const clearButton = document.createElement('button');
+                clearButton.className = 'signature-action-button';
+                clearButton.innerHTML = '⌫';
+                clearButton.title = '清除簽名';
+                clearButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    clearSignature(stampData);
+                });
+
+                resizeButton.classList.add('signature-action-button');
+                toolbar.appendChild(moveButton);
+                toolbar.appendChild(clearButton);
+                toolbar.appendChild(resizeButton);
+                container.appendChild(toolbar);
+            } else {
+                container.appendChild(resizeButton);
+            }
             stampLayer.appendChild(container);
+
+            if (stampData.type === 'signature') {
+                const signatureCanvas = container.querySelector('.signature-pad');
+                if (signatureCanvas) {
+                    setupSignaturePad(signatureCanvas, stampData);
+                }
+            }
 
             // Add event listeners
             makeDraggable(container, stampData);
@@ -506,6 +628,96 @@
                 e.stopPropagation(); // Prevent triggering drag start
                 toggleResizeMode(container, stampData);
             });
+        }
+
+        function setupSignaturePad(canvas, stampData) {
+            resizeSignatureCanvas(canvas, stampData);
+
+            const context = canvas.getContext('2d');
+            context.lineWidth = 2.4;
+            context.lineCap = 'round';
+            context.lineJoin = 'round';
+            context.strokeStyle = '#111827';
+
+            let isDrawing = false;
+
+            const getPoint = (event) => {
+                const rect = canvas.getBoundingClientRect();
+                const pointer = event.touches ? event.touches[0] : event;
+                return {
+                    x: (pointer.clientX - rect.left) * (canvas.width / rect.width),
+                    y: (pointer.clientY - rect.top) * (canvas.height / rect.height)
+                };
+            };
+
+            const startDrawing = (event) => {
+                if (stampData.isResizing) return;
+                isDrawing = true;
+                const point = getPoint(event);
+                context.beginPath();
+                context.moveTo(point.x, point.y);
+                event.preventDefault();
+                event.stopPropagation();
+            };
+
+            const draw = (event) => {
+                if (!isDrawing) return;
+                const point = getPoint(event);
+                context.lineTo(point.x, point.y);
+                context.stroke();
+                stampData.hasInk = true;
+                stampData.dataUrl = canvas.toDataURL('image/png');
+                event.preventDefault();
+                event.stopPropagation();
+            };
+
+            const stopDrawing = (event) => {
+                if (!isDrawing) return;
+                isDrawing = false;
+                stampData.dataUrl = canvas.toDataURL('image/png');
+                if (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            };
+
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseleave', stopDrawing);
+            canvas.addEventListener('touchstart', startDrawing, { passive: false });
+            canvas.addEventListener('touchmove', draw, { passive: false });
+            canvas.addEventListener('touchend', stopDrawing);
+        }
+
+        function resizeSignatureCanvas(canvas, stampData) {
+            const previousDataUrl = stampData.dataUrl;
+            canvas.width = Math.max(1, Math.round(stampData.width));
+            canvas.height = Math.max(1, Math.round(stampData.height));
+
+            const context = canvas.getContext('2d');
+            context.lineWidth = 2.4;
+            context.lineCap = 'round';
+            context.lineJoin = 'round';
+            context.strokeStyle = '#111827';
+
+            if (previousDataUrl) {
+                const image = new Image();
+                image.onload = () => {
+                    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                    stampData.dataUrl = canvas.toDataURL('image/png');
+                };
+                image.src = previousDataUrl;
+            }
+        }
+
+        function clearSignature(stampData) {
+            stampData.dataUrl = null;
+            stampData.hasInk = false;
+            const canvas = document.querySelector(`canvas[data-stamp-id="${stampData.id}"]`);
+            if (!canvas) return;
+            const context = canvas.getContext('2d');
+            context.clearRect(0, 0, canvas.width, canvas.height);
         }
 
          function toggleResizeMode(container, stampData) {
@@ -520,7 +732,9 @@
 
             element.addEventListener('mousedown', (e) => {
                  // Only allow dragging if not in resize mode and the click is not on the button/handle
-                 if (stampData.isResizing || e.target.classList.contains('resize-handle') || e.target.classList.contains('resize-mode-button')) {
+                 const isSignatureDragHandle = Boolean(e.target.closest('.signature-drag-handle'));
+                 const isControl = Boolean(e.target.closest('button, .resize-handle, .signature-pad'));
+                 if (stampData.isResizing || e.target.classList.contains('resize-handle') || e.target.classList.contains('resize-mode-button') || (stampData.type === 'signature' && isControl && !isSignatureDragHandle)) {
                      return;
                  }
                 isDragging = true;
@@ -615,11 +829,18 @@
                 // Update stamp data
                 stampData.width = newWidth;
                 stampData.height = newHeight;
+
             });
 
             document.addEventListener('mouseup', () => {
                 if (isResizingElement) {
                     isResizingElement = false;
+                    if (stampData.type === 'signature') {
+                        const canvas = element.querySelector('.signature-pad');
+                        if (canvas) {
+                            resizeSignatureCanvas(canvas, stampData);
+                        }
+                    }
                     // No class removal needed here
                 }
             });
@@ -648,8 +869,9 @@
 
         async function generateSignedPdf() {
              // Ensure pdf.js document (pdfDoc) and original bytes are available
-            if (!originalPdfBytes || !pdfDoc || placedStamps.length === 0) {
-                alert('請先上傳 PDF 並添加至少一個印章。');
+            const drawableStamps = placedStamps.filter(stampData => stampData.type !== 'signature' || stampData.hasInk);
+            if (!originalPdfBytes || !pdfDoc || drawableStamps.length === 0) {
+                alert('請先上傳 PDF，並添加至少一個印章或完成手寫簽名。');
                 return;
             }
 
@@ -665,7 +887,7 @@
                 const pages = pdfLibDoc.getPages();
 
                 // Embed each stamp
-                for (const stampData of placedStamps) {
+                for (const stampData of drawableStamps) {
                      // Validate page number
                     if (stampData.page > 0 && stampData.page <= pages.length) {
                         const pageIndex = stampData.page - 1; // pdf-lib pages are 0-indexed
